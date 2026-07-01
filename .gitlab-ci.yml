@@ -1,0 +1,92 @@
+stages:
+  - lint
+  - test
+  - build
+  - security
+
+variables:
+  NODE_VERSION: '22'
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: '/certs'
+  TRIVY_NO_PROGRESS: 'true'
+
+default:
+  interruptible: true
+
+lint:frontend:
+  stage: lint
+  image: node:${NODE_VERSION}-alpine
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run lint
+
+lint:backend:
+  stage: lint
+  image: node:${NODE_VERSION}-alpine
+  before_script:
+    - cd backend
+    - npm ci
+  script:
+    - npm run lint
+
+test:frontend:
+  stage: test
+  image: node:${NODE_VERSION}-alpine
+  needs: ['lint:frontend']
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm test -- --runInBand
+
+test:backend:
+  stage: test
+  image: node:${NODE_VERSION}-alpine
+  needs: ['lint:backend']
+  before_script:
+    - cd backend
+    - npm ci
+  script:
+    - npm test -- --runInBand
+
+build:images:
+  stage: build
+  image: docker:27.1.1
+  services:
+    - docker:27.1.1-dind
+  needs: ['test:frontend', 'test:backend']
+  script:
+    - docker build -t perfume-shop-frontend:ci ./frontend
+    - docker build -t perfume-shop-backend:ci ./backend
+    - docker save perfume-shop-frontend:ci -o frontend-image.tar
+    - docker save perfume-shop-backend:ci -o backend-image.tar
+  artifacts:
+    paths:
+      - frontend-image.tar
+      - backend-image.tar
+    expire_in: 1 day
+
+security:filesystem:
+  stage: security
+  image:
+    name: aquasec/trivy:0.51.2
+    entrypoint: ['']
+  needs: ['test:frontend', 'test:backend']
+  script:
+    - trivy fs --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed .
+
+security:images:
+  stage: security
+  image: docker:27.1.1
+  services:
+    - docker:27.1.1-dind
+  needs: ['build:images']
+  before_script:
+    - wget -qO- https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+    - docker load -i frontend-image.tar
+    - docker load -i backend-image.tar
+  script:
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed perfume-shop-frontend:ci
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed perfume-shop-backend:ci

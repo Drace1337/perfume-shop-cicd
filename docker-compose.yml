@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: perfume-shop-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-perfume_shop}
+      POSTGRES_USER: ${POSTGRES_USER:-perfume_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-perfume_password}
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-perfume_user} -d ${POSTGRES_DB:-perfume_shop}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - perfume-shop-network
+
+  backend:
+    image: perfume-shop-backend:local
+    container_name: perfume-shop-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${BACKEND_PORT:-4000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-perfume_user}:${POSTGRES_PASSWORD:-perfume_password}@postgres:5432/${POSTGRES_DB:-perfume_shop}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '4000:4000'
+    networks:
+      - perfume-shop-network
+
+  frontend:
+    image: perfume-shop-frontend:local
+    container_name: perfume-shop-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000/api}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '3000:80'
+    networks:
+      - perfume-shop-network
+
+volumes:
+  postgres_data:
+
+networks:
+  perfume-shop-network:
+    driver: bridge
