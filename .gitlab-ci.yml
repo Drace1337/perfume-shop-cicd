@@ -5,36 +5,19 @@ stages:
   - security
 
 variables:
-  NODE_VERSION: '22'
+  NODE_VERSION: '22-alpine'
   TRIVY_VERSION: '0.51.2'
   TRIVY_NO_PROGRESS: 'true'
   TRIVY_SEVERITY: 'CRITICAL,HIGH'
 
-default:
-  interruptible: true
-
-# Reusable cache anchors: node_modules keyed by the lockfile of each project.
-# A changed package-lock.json invalidates the cache and forces a clean install.
-.backend_cache: &backend_cache
-  key:
-    files:
-      - backend/package-lock.json
-  paths:
-    - backend/node_modules/
-
-.frontend_cache: &frontend_cache
-  key:
-    files:
-      - frontend/package-lock.json
-  paths:
-    - frontend/node_modules/
-
 # ---------------- LINT ----------------
 lint:backend:
   stage: lint
-  image: node:${NODE_VERSION}-alpine
+  image: node:${NODE_VERSION}
   cache:
-    <<: *backend_cache
+    key: backend-deps
+    paths:
+      - backend/node_modules/
   before_script:
     - cd backend
     - npm ci --prefer-offline --no-audit
@@ -43,9 +26,11 @@ lint:backend:
 
 lint:frontend:
   stage: lint
-  image: node:${NODE_VERSION}-alpine
+  image: node:${NODE_VERSION}
   cache:
-    <<: *frontend_cache
+    key: frontend-deps
+    paths:
+      - frontend/node_modules/
   before_script:
     - cd frontend
     - npm ci --prefer-offline --no-audit
@@ -55,10 +40,12 @@ lint:frontend:
 # ---------------- TEST ----------------
 test:backend:
   stage: test
-  image: node:${NODE_VERSION}-alpine
+  image: node:${NODE_VERSION}
   needs: ['lint:backend']
   cache:
-    <<: *backend_cache
+    key: backend-deps
+    paths:
+      - backend/node_modules/
   before_script:
     - cd backend
     - npm ci --prefer-offline --no-audit
@@ -67,10 +54,12 @@ test:backend:
 
 test:frontend:
   stage: test
-  image: node:${NODE_VERSION}-alpine
+  image: node:${NODE_VERSION}
   needs: ['lint:frontend']
   cache:
-    <<: *frontend_cache
+    key: frontend-deps
+    paths:
+      - frontend/node_modules/
   before_script:
     - cd frontend
     - npm ci --prefer-offline --no-audit
@@ -80,10 +69,12 @@ test:frontend:
 # ---------------- BUILD ----------------
 build:backend:
   stage: build
-  image: node:${NODE_VERSION}-alpine
+  image: node:${NODE_VERSION}
   needs: ['test:backend']
   cache:
-    <<: *backend_cache
+    key: backend-deps
+    paths:
+      - backend/node_modules/
   before_script:
     - cd backend
     - npm ci --prefer-offline --no-audit
@@ -96,10 +87,12 @@ build:backend:
 
 build:frontend:
   stage: build
-  image: node:${NODE_VERSION}-alpine
+  image: node:${NODE_VERSION}
   needs: ['test:frontend']
   cache:
-    <<: *frontend_cache
+    key: frontend-deps
+    paths:
+      - frontend/node_modules/
   before_script:
     - cd frontend
     - npm ci --prefer-offline --no-audit
