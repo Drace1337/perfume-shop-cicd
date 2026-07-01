@@ -6,87 +6,116 @@ stages:
 
 variables:
   NODE_VERSION: '22'
-  DOCKER_DRIVER: overlay2
-  DOCKER_TLS_CERTDIR: '/certs'
+  TRIVY_VERSION: '0.51.2'
   TRIVY_NO_PROGRESS: 'true'
+  TRIVY_SEVERITY: 'CRITICAL,HIGH'
 
 default:
   interruptible: true
 
-lint:frontend:
-  stage: lint
-  image: node:${NODE_VERSION}-alpine
-  before_script:
-    - cd frontend
-    - npm ci
-  script:
-    - npm run lint
+# Reusable cache anchors: node_modules keyed by the lockfile of each project.
+# A changed package-lock.json invalidates the cache and forces a clean install.
+.backend_cache: &backend_cache
+  key:
+    files:
+      - backend/package-lock.json
+  paths:
+    - backend/node_modules/
 
+.frontend_cache: &frontend_cache
+  key:
+    files:
+      - frontend/package-lock.json
+  paths:
+    - frontend/node_modules/
+
+# ---------------- LINT ----------------
 lint:backend:
   stage: lint
   image: node:${NODE_VERSION}-alpine
+  cache:
+    <<: *backend_cache
   before_script:
     - cd backend
-    - npm ci
+    - npm ci --prefer-offline --no-audit
   script:
     - npm run lint
+
+lint:frontend:
+  stage: lint
+  image: node:${NODE_VERSION}-alpine
+  cache:
+    <<: *frontend_cache
+  before_script:
+    - cd frontend
+    - npm ci --prefer-offline --no-audit
+  script:
+    - npm run lint
+
+# ---------------- TEST ----------------
+test:backend:
+  stage: test
+  image: node:${NODE_VERSION}-alpine
+  needs: ['lint:backend']
+  cache:
+    <<: *backend_cache
+  before_script:
+    - cd backend
+    - npm ci --prefer-offline --no-audit
+  script:
+    - npm run test
 
 test:frontend:
   stage: test
   image: node:${NODE_VERSION}-alpine
   needs: ['lint:frontend']
+  cache:
+    <<: *frontend_cache
   before_script:
     - cd frontend
-    - npm ci
+    - npm ci --prefer-offline --no-audit
   script:
-    - npm test -- --runInBand
+    - npm run test
 
-test:backend:
-  stage: test
+# ---------------- BUILD ----------------
+build:backend:
+  stage: build
   image: node:${NODE_VERSION}-alpine
-  needs: ['lint:backend']
+  needs: ['test:backend']
+  cache:
+    <<: *backend_cache
   before_script:
     - cd backend
-    - npm ci
+    - npm ci --prefer-offline --no-audit
   script:
-    - npm test -- --runInBand
-
-build:images:
-  stage: build
-  image: docker:27.1.1
-  services:
-    - docker:27.1.1-dind
-  needs: ['test:frontend', 'test:backend']
-  script:
-    - docker build -t perfume-shop-frontend:ci ./frontend
-    - docker build -t perfume-shop-backend:ci ./backend
-    - docker save perfume-shop-frontend:ci -o frontend-image.tar
-    - docker save perfume-shop-backend:ci -o backend-image.tar
+    - npm run build
   artifacts:
     paths:
-      - frontend-image.tar
-      - backend-image.tar
+      - backend/dist/
     expire_in: 1 day
 
-security:filesystem:
+build:frontend:
+  stage: build
+  image: node:${NODE_VERSION}-alpine
+  needs: ['test:frontend']
+  cache:
+    <<: *frontend_cache
+  before_script:
+    - cd frontend
+    - npm ci --prefer-offline --no-audit
+  script:
+    - npm run build
+  artifacts:
+    paths:
+      - frontend/dist/
+    expire_in: 1 day
+
+# ---------------- SECURITY ----------------
+security:trivy-fs:
   stage: security
   image:
-    name: aquasec/trivy:0.51.2
+    name: aquasec/trivy:${TRIVY_VERSION}
     entrypoint: ['']
-  needs: ['test:frontend', 'test:backend']
+  needs: ['build:backend', 'build:frontend']
   script:
-    - trivy fs --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed .
-
-security:images:
-  stage: security
-  image: docker:27.1.1
-  services:
-    - docker:27.1.1-dind
-  needs: ['build:images']
-  before_script:
-    - wget -qO- https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-    - docker load -i frontend-image.tar
-    - docker load -i backend-image.tar
-  script:
-    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed perfume-shop-frontend:ci
-    - trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed perfume-shop-backend:ci
+    - trivy fs --exit-code 1 --severity ${TRIVY_SEVERITY} --ignore-unfixed .
