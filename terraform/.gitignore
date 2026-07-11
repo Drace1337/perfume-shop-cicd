@@ -1,0 +1,33 @@
+# =============================================================================
+#  .gitignore — Terraform
+#  Chroni przed commitowaniem stanu, sekretów i plików lokalnych/cache.
+# =============================================================================
+
+# Katalogi robocze i cache providerów (pobierane przez `terraform init`)
+**/.terraform/*
+.terraform/
+.terraform.tfstate.lock.info
+
+# Pliki stanu — mogą zawierać dane wrażliwe (IP, ARN, sekrety); nigdy do repo
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Pliki ze zmiennymi — mogą zawierać dane wrażliwe / środowiskowe
+*.tfvars
+*.tfvars.json
+!terraform.tfvars
+
+# Nadpisania lokalne (override) — z definicji lokalne, nie współdzielone
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Pliki planu wykonania
+*.tfplan
+
+# Katalog konfiguracji CLI
+.terraformrc
+terraform.rc
