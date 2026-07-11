@@ -1,0 +1,10 @@
+FROM jenkins/jenkins:lts-alpine
+
+# Przełączamy się na roota, żeby zainstalować paczki
+USER root
+
+# Instalujemy klienta Dockera wewnątrz kontenera Jenkinsa
+RUN apk add --no-cache docker-cli
+
+# Wracamy do roota (ponieważ gniazdo docker.sock na hostach często wymaga uprawnień roota)
+USER root

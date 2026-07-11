@@ -3,6 +3,7 @@ stages:
   - test
   - build
   - security
+  - deploy
 
 variables:
   NODE_VERSION: '22-alpine'
@@ -112,3 +113,31 @@ security:trivy-fs:
   needs: ['build:backend', 'build:frontend']
   script:
     - trivy fs --exit-code 1 --severity ${TRIVY_SEVERITY} --ignore-unfixed .
+
+# ---------------- DEPLOY ----------------
+# ARCHITEKTURA BEZPIECZEŃSTWA — GitLab CI:
+# Sekrety pochodzą z "CI/CD Variables" (Settings -> CI/CD -> Variables),
+# oznaczonych jako 'Masked' (ukrywane w logach) i 'Protected' (dostępne tylko
+# na chronionych gałęziach). GitLab wstrzykuje je jako zmienne środowiskowe
+# joba, więc konwencja TF_VAR_* pozwala Terraformowi odczytać je automatycznie.
+deploy:terraform:
+  stage: deploy
+  image:
+    name: hashicorp/terraform:latest
+    entrypoint: ['']
+  # 'when: manual' => infrastruktura nie stawia się automatycznie przy commicie.
+  when: manual
+  # Nie blokuj potoku, jeśli deploy nie zostanie ręcznie uruchomiony.
+  allow_failure: false
+  needs: ['security:trivy-fs']
+  variables:
+    AWS_DEFAULT_REGION: eu-central-1
+    # Mapowanie natywnych sekretów GitLab na zmienne rozpoznawane przez Terraform.
+    TF_VAR_db_password: ${DB_PASSWORD}
+    TF_VAR_jwt_secret: ${JWT_SECRET}
+  before_script:
+    - cd terraform
+  script:
+    - terraform init -input=false
+    - terraform plan -input=false -out=tfplan
+    - terraform apply -input=false -auto-approve tfplan

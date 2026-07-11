@@ -64,6 +64,40 @@ pipeline {
                 }
             }
         }
+
+        // =====================================================================
+        //  ARCHITEKTURA BEZPIECZEŃSTWA — Jenkins:
+        //  Sekrety pochodzą z natywnego "Jenkins Credentials Store". Blok
+        //  withCredentials wypożycza je TYLKO na czas trwania bloku i maskuje
+        //  w logach. Krok 'input' wymusza ręczne, świadome zatwierdzenie
+        //  wdrożenia (bramka CD) przed postawieniem infrastruktury na AWS.
+        // =====================================================================
+        stage('Deploy') {
+            agent {
+                docker {
+                    image 'hashicorp/terraform:latest'
+                    args '--entrypoint='
+                }
+            }
+            steps {
+                // Ręczne potwierdzenie z timeoutem, by build nie wisiał w nieskończoność.
+                timeout(time: 15, unit: 'MINUTES') {
+                    input message: 'Wdrożyć infrastrukturę na AWS (terraform apply)?', ok: 'Deploy'
+                }
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY'),
+                    string(credentialsId: 'DB_PASSWORD', variable: 'TF_VAR_db_password'),
+                    string(credentialsId: 'JWT_SECRET', variable: 'TF_VAR_jwt_secret')
+                ]) {
+                    dir('terraform') {
+                        sh 'terraform init -input=false'
+                        sh 'terraform plan -input=false -out=tfplan'
+                        sh 'terraform apply -input=false -auto-approve tfplan'
+                    }
+                }
+            }
+        }
     }
 
     post {

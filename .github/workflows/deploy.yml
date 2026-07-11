@@ -1,0 +1,63 @@
+name: CD (Terraform deploy to AWS)
+
+# Wdrożenie infrastruktury jest świadomie ODDZIELONE od CI i uruchamiane
+# wyłącznie ręcznie (workflow_dispatch) — infrastruktura nie stawia się
+# przy każdym pushu, co jest kluczowe dla kontrolowanych pomiarów w pracy.
+on:
+  workflow_dispatch:
+
+# Zawężenie uprawnień domyślnego tokenu GITHUB_TOKEN (zasada least privilege).
+permissions:
+  contents: read
+
+# Blokada równoległych wdrożeń na tę samą infrastrukturę (ochrona stanu Terraform).
+concurrency:
+  group: terraform-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Terraform apply
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+
+    # ---------------------------------------------------------------------
+    #  ARCHITEKTURA BEZPIECZEŃSTWA — GitHub Actions:
+    #  Sekrety pochodzą z natywnego magazynu "GitHub Encrypted Secrets"
+    #  (Settings -> Secrets and variables -> Actions). Wstrzykujemy je przez
+    #  składnię ${{ secrets.* }}. GitHub automatycznie MASKUJE ich wartości
+    #  w logach. Konwencja TF_VAR_<nazwa> sprawia, że Terraform sam odczytuje
+    #  zmienne db_password / jwt_secret bez podawania ich w wierszu poleceń.
+    # ---------------------------------------------------------------------
+    env:
+      TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+      TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Klucze AWS trafiają do środowiska jako krótko żyjące zmienne sesji;
+      # akcja konfiguruje domyślny łańcuch poświadczeń AWS SDK.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform plan
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Terraform apply
+        run: terraform apply -input=false -auto-approve tfplan
