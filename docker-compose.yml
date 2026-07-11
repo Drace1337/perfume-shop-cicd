@@ -20,11 +20,8 @@ services:
       - perfume-shop-network
 
   backend:
-    image: perfume-shop-backend:local
+    image: drace1337/perfume-shop-backend:${IMAGE_TAG:-latest}
     container_name: perfume-shop-backend
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-development}
@@ -35,19 +32,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - '4000:4000'
+    # Backend NIE jest publikowany na hoście — dostęp wyłącznie wewnątrz sieci
+    # Dockera, przez reverse proxy Nginx (frontend: /api -> backend:4000).
+    expose:
+      - '4000'
     networks:
       - perfume-shop-network
 
   frontend:
-    image: perfume-shop-frontend:local
+    image: drace1337/perfume-shop-frontend:${IMAGE_TAG:-latest}
     container_name: perfume-shop-frontend
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000/api}
     restart: unless-stopped
     depends_on:
       - backend
@@ -60,6 +54,9 @@ services:
       context: .
       dockerfile: Dockerfile.jenkins
     container_name: perfume-shop-jenkins
+    # Profil 'local' => usługa Jenkinsa NIE startuje przy zwykłym `docker compose up -d`
+    # (m.in. na serwerze AWS). Uruchamiasz ją lokalnie: `docker compose --profile local up -d`.
+    profiles: ['local']
     restart: unless-stopped
     privileged: true
     user: root

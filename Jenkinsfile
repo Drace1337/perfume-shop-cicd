@@ -66,6 +66,41 @@ pipeline {
         }
 
         // =====================================================================
+        //  BUILD ONCE — budowa i push obrazów do Docker Hub.
+        //  Kontener docker:27-cli używa demona hosta (zamontowany docker.sock),
+        //  więc ciężka kompilacja dzieje się na agencie CI, a NIE na t3.micro.
+        // =====================================================================
+        stage('Build & Push Images') {
+            agent {
+                docker {
+                    image 'docker:27-cli'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock'
+                }
+            }
+            environment {
+                BACKEND_IMAGE  = 'drace1337/perfume-shop-backend'
+                FRONTEND_IMAGE = 'drace1337/perfume-shop-frontend'
+            }
+            steps {
+                // Sekrety z Jenkins Credentials Store; withCredentials maskuje je
+                // i wypożycza wyłącznie na czas trwania tego bloku.
+                withCredentials([
+                    string(credentialsId: 'DOCKER_USERNAME', variable: 'DOCKER_USERNAME'),
+                    string(credentialsId: 'DOCKER_PASSWORD', variable: 'DOCKER_PASSWORD')
+                ]) {
+                    sh 'echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin'
+                    sh 'docker build -t $BACKEND_IMAGE:latest -t $BACKEND_IMAGE:${GIT_COMMIT} ./backend'
+                    sh 'docker build -t $FRONTEND_IMAGE:latest -t $FRONTEND_IMAGE:${GIT_COMMIT} ./frontend'
+                    sh 'docker push $BACKEND_IMAGE:latest'
+                    sh 'docker push $BACKEND_IMAGE:${GIT_COMMIT}'
+                    sh 'docker push $FRONTEND_IMAGE:latest'
+                    sh 'docker push $FRONTEND_IMAGE:${GIT_COMMIT}'
+                    sh 'docker logout'
+                }
+            }
+        }
+
+        // =====================================================================
         //  ARCHITEKTURA BEZPIECZEŃSTWA — Jenkins:
         //  Sekrety pochodzą z natywnego "Jenkins Credentials Store". Blok
         //  withCredentials wypożycza je TYLKO na czas trwania bloku i maskuje

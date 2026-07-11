@@ -14,9 +14,9 @@ output "frontend_url" {
   value       = "http://${aws_instance.app_server.public_ip}:3000"
 }
 
-output "backend_url" {
-  description = "Gotowy URL backendu Node.js."
-  value       = "http://${aws_instance.app_server.public_ip}:4000"
+output "api_url" {
+  description = "URL API — dostępne przez reverse proxy Nginx (backend NIE jest publiczny)."
+  value       = "http://${aws_instance.app_server.public_ip}:3000/api"
 }
 
 output "ssh_command" {

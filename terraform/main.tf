@@ -75,14 +75,13 @@ data "aws_ami" "ubuntu" {
 #     Otwieramy tylko potrzebne porty (zasada least privilege):
 #       22   -> SSH (administracja)
 #       80   -> HTTP (reverse proxy / Nginx)
-#       3000 -> frontend React
-#       4000 -> backend Node.js
-#     UWAGA: port backendu (4000) musi zgadzać się z portem publikowanym
-#     w docker-compose.yml — dostosuj, jeśli backend nasłuchuje na innym porcie.
+#       3000 -> frontend React (Nginx) — jedyny publiczny punkt wejścia aplikacji
+#     UWAGA: backend (port 4000) NIE jest wystawiony publicznie — jest dostępny
+#     wyłącznie wewnętrznie, przez reverse proxy Nginx w sieci Dockera (/api -> backend:4000).
 # -----------------------------------------------------------------------------
 resource "aws_security_group" "app_sg" {
   name        = "${var.project_name}-sg"
-  description = "Security group dla aplikacji Perfume Shop (SSH, HTTP, frontend, backend)."
+  description = "Security group dla aplikacji Perfume Shop (SSH, HTTP, frontend)."
 
   # --- Ruch przychodzący (ingress) ---
   ingress {
@@ -105,14 +104,6 @@ resource "aws_security_group" "app_sg" {
     description = "Frontend React"
     from_port   = 3000
     to_port     = 3000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "Backend Node.js"
-    from_port   = 4000
-    to_port     = 4000
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -153,7 +144,8 @@ resource "aws_instance" "app_server" {
   }
 
   # --- Skrypt cloud-init (bootstrap serwera) ---
-  # Terraform interpoluje tylko ${var.github_repo_url}; reszta to czysty bash.
+  # Terraform interpoluje sekrety/nazwy (${var.db_name} itd.) oraz wstrzykuje
+  # docker-compose.yml przez base64encode(file(...)); reszta to czysty bash.
   user_data = <<-EOF
     #!/bin/bash
     set -euxo pipefail
@@ -171,28 +163,29 @@ resource "aws_instance" "app_server" {
     # Pozwól użytkownikowi 'ubuntu' używać dockera bez sudo
     usermod -aG docker ubuntu
 
-    # 3) Sklonowanie repozytorium aplikacji
-    cd /home/ubuntu
-    git clone ${var.github_repo_url} app
-    chown -R ubuntu:ubuntu /home/ubuntu/app
+    # 3) Katalog aplikacji + bezpieczne wygenerowanie pliku .env (sekrety z Terraform).
+    mkdir -p /home/ubuntu/app
     cd /home/ubuntu/app
-
-    # 4) Bezpieczne wygenerowanie pliku .env na produkcji.
-    #    Sekrety wstrzykuje Terraform (podane z terminala) — NIE ma ich w repo.
-    #    Pojedyncze cudzysłowy => bash traktuje wartości dosłownie (bez ekspansji zmiennych).
     printf '%s\n' \
       'NODE_ENV=production' \
       'LOG_LEVEL=info' \
       'BACKEND_PORT=4000' \
+      'IMAGE_TAG=latest' \
       'POSTGRES_DB=${var.db_name}' \
       'POSTGRES_USER=${var.db_user}' \
       'POSTGRES_PASSWORD=${var.db_password}' \
       'JWT_SECRET=${var.jwt_secret}' \
       > .env
     chmod 600 .env
-    chown ubuntu:ubuntu .env
 
-    # 5) Uruchomienie całego stacku w tle (docker compose sam wczyta plik .env)
+    # 4) Wstrzyknięcie docker-compose.yml prosto z Terraform (base64 => brak problemów
+    #    z interpolacją i znakami specjalnymi). Serwer NIE klonuje repo i NIE buduje obrazów.
+    echo '${base64encode(file("${path.module}/../docker-compose.yml"))}' | base64 -d > docker-compose.yml
+    chown -R ubuntu:ubuntu /home/ubuntu/app
+
+    # 5) Pobranie GOTOWYCH obrazów z Docker Hub i start (Build Once, Deploy Anywhere).
+    #    Odciąża to t3.micro: brak kompilacji npm => brak ryzyka OOM Killera.
+    docker compose pull
     docker compose up -d
   EOF
 

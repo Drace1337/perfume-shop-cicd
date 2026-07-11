@@ -22,13 +22,6 @@ variable "project_name" {
   default     = "perfume-shop"
 }
 
-variable "github_repo_url" {
-  description = "Publiczny URL repozytorium GitHub z aplikacją (docker-compose.yml)."
-  type        = string
-  # Wartość rzeczywista dostarczana jest w terraform.tfvars.
-  default = "https://github.com/PLACEHOLDER/perfume-shop.git"
-}
-
 variable "key_name" {
   description = "Nazwa istniejącej pary kluczy EC2 do logowania po SSH (opcjonalne)."
   type        = string
