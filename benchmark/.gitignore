@@ -1,0 +1,10 @@
+# Sekrety i wyniki eksperymentu — nie commitujemy do repozytorium.
+.env
+metrics.csv
+*.csv
+
+# Artefakty Pythona
+__pycache__/
+*.pyc
+.venv/
+venv/
