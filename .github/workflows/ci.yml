@@ -7,6 +7,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Zawężenie uprawnień domyślnego tokenu GITHUB_TOKEN (zasada least privilege).
+permissions:
+  contents: read
+
+# Blokada równoległych przebiegów (współpracuje ze State Lockiem DynamoDB).
+concurrency:
+  group: benchmark-pipeline
+  cancel-in-progress: false
+
 jobs:
   backend:
     name: Backend (lint, test, build)
@@ -82,3 +91,81 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           format: 'table'
+
+  # ---------------------------------------------------------------------------
+  #  BUILD ONCE: obrazy budowane raz i wypychane do Docker Hub pod STATYCZNYM
+  #  tagiem `benchmark` — dzięki temu manifest docker-compose.yml jest niezmienny,
+  #  a `terraform apply` pozostaje idempotentny między iteracjami pomiaru.
+  # ---------------------------------------------------------------------------
+  build-push:
+    name: Build & push Docker images
+    needs: [backend, frontend, security]
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_IMAGE: drace1337/perfume-shop-backend
+      FRONTEND_IMAGE: drace1337/perfume-shop-frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ env.BACKEND_IMAGE }}:benchmark
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ env.FRONTEND_IMAGE }}:benchmark
+
+  # ---------------------------------------------------------------------------
+  #  DEPLOY: ciągłe wdrożenie na AWS (Terraform apply -auto-approve).
+  #  Brak manualnych barier — pełna automatyzacja na potrzeby badań.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Terraform apply
+    needs: build-push
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+      TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform plan
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Terraform apply
+        run: terraform apply -input=false -auto-approve tfplan

@@ -89,12 +89,10 @@ pipeline {
                     string(credentialsId: 'DOCKER_PASSWORD', variable: 'DOCKER_PASSWORD')
                 ]) {
                     sh 'echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin'
-                    sh 'docker build -t $BACKEND_IMAGE:latest -t $BACKEND_IMAGE:${GIT_COMMIT} ./backend'
-                    sh 'docker build -t $FRONTEND_IMAGE:latest -t $FRONTEND_IMAGE:${GIT_COMMIT} ./frontend'
-                    sh 'docker push $BACKEND_IMAGE:latest'
-                    sh 'docker push $BACKEND_IMAGE:${GIT_COMMIT}'
-                    sh 'docker push $FRONTEND_IMAGE:latest'
-                    sh 'docker push $FRONTEND_IMAGE:${GIT_COMMIT}'
+                    sh 'docker build -t $BACKEND_IMAGE:benchmark ./backend'
+                    sh 'docker build -t $FRONTEND_IMAGE:benchmark ./frontend'
+                    sh 'docker push $BACKEND_IMAGE:benchmark'
+                    sh 'docker push $FRONTEND_IMAGE:benchmark'
                     sh 'docker logout'
                 }
             }
@@ -104,8 +102,8 @@ pipeline {
         //  ARCHITEKTURA BEZPIECZEŃSTWA — Jenkins:
         //  Sekrety pochodzą z natywnego "Jenkins Credentials Store". Blok
         //  withCredentials wypożycza je TYLKO na czas trwania bloku i maskuje
-        //  w logach. Krok 'input' wymusza ręczne, świadome zatwierdzenie
-        //  wdrożenia (bramka CD) przed postawieniem infrastruktury na AWS.
+        //  w logach. Wdrożenie jest CIĄGŁE — bez bariery akceptacji (pełna
+        //  automatyzacja na potrzeby badań wydajnościowych).
         // =====================================================================
         stage('Deploy') {
             agent {
@@ -115,10 +113,6 @@ pipeline {
                 }
             }
             steps {
-                // Ręczne potwierdzenie z timeoutem, by build nie wisiał w nieskończoność.
-                timeout(time: 15, unit: 'MINUTES') {
-                    input message: 'Wdrożyć infrastrukturę na AWS (terraform apply)?', ok: 'Deploy'
-                }
                 withCredentials([
                     string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
                     string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY'),

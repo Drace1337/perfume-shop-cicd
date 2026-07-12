@@ -170,7 +170,7 @@ resource "aws_instance" "app_server" {
       'NODE_ENV=production' \
       'LOG_LEVEL=info' \
       'BACKEND_PORT=4000' \
-      'IMAGE_TAG=latest' \
+      'IMAGE_TAG=benchmark' \
       'POSTGRES_DB=${var.db_name}' \
       'POSTGRES_USER=${var.db_user}' \
       'POSTGRES_PASSWORD=${var.db_password}' \
