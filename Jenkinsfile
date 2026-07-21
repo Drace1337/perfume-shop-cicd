@@ -23,12 +23,31 @@ pipeline {
                             image 'node:22-alpine'
                         }
                     }
-                    steps {
-                        dir('backend') {
-                            sh 'npm ci'
-                            sh 'npm run lint'
-                            sh 'npm run test'
-                            sh 'npm run build'
+                    // Zagniezdzone stage'y sekwencyjne dziela ten sam agent/workspace,
+                    // dzieki czemu Jenkins eksponuje osobne czasy trwania kazdego etapu
+                    // (lint-backend / test-backend / build-backend), spojnie z GitLab/GitHub.
+                    stages {
+                        stage('lint-backend') {
+                            steps {
+                                dir('backend') {
+                                    sh 'npm ci'
+                                    sh 'npm run lint'
+                                }
+                            }
+                        }
+                        stage('test-backend') {
+                            steps {
+                                dir('backend') {
+                                    sh 'npm run test'
+                                }
+                            }
+                        }
+                        stage('build-backend') {
+                            steps {
+                                dir('backend') {
+                                    sh 'npm run build'
+                                }
+                            }
                         }
                     }
                 }
@@ -39,17 +58,33 @@ pipeline {
                             image 'node:22-alpine'
                         }
                     }
-                    steps {
-                        dir('frontend') {
-                            sh 'npm ci'
-                            sh 'npm run lint'
-                            sh 'npm run test'
-                            sh 'npm run build'
+                    stages {
+                        stage('lint-frontend') {
+                            steps {
+                                dir('frontend') {
+                                    sh 'npm ci'
+                                    sh 'npm run lint'
+                                }
+                            }
+                        }
+                        stage('test-frontend') {
+                            steps {
+                                dir('frontend') {
+                                    sh 'npm run test'
+                                }
+                            }
+                        }
+                        stage('build-frontend') {
+                            steps {
+                                dir('frontend') {
+                                    sh 'npm run build'
+                                }
+                            }
                         }
                     }
                 }
 
-                stage('Security (Trivy fs)') {
+                stage('security') {
                     agent {
                         docker {
                             // Official Trivy image; reset the entrypoint so Jenkins
@@ -70,7 +105,7 @@ pipeline {
         //  Kontener docker:27-cli używa demona hosta (zamontowany docker.sock),
         //  więc ciężka kompilacja dzieje się na agencie CI, a NIE na t3.micro.
         // =====================================================================
-        stage('Build & Push Images') {
+        stage('build-push') {
             agent {
                 docker {
                     image 'docker:27-cli'
@@ -105,7 +140,7 @@ pipeline {
         //  w logach. Wdrożenie jest CIĄGŁE — bez bariery akceptacji (pełna
         //  automatyzacja na potrzeby badań wydajnościowych).
         // =====================================================================
-        stage('Deploy') {
+        stage('deploy') {
             agent {
                 docker {
                     image 'hashicorp/terraform:latest'

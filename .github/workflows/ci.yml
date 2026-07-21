@@ -17,8 +17,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  backend:
-    name: Backend (lint, test, build)
+  # ---------------------------------------------------------------------------
+  #  Topologia zgranulowana (1:1 z .gitlab-ci.yml): kazdy etap to osobny job
+  #  na wlasnym runnerze. Slownik nazw wspolny dla wszystkich platform:
+  #  lint-backend, test-backend, build-backend (+ analogicznie frontend),
+  #  security, build-push, deploy.
+  # ---------------------------------------------------------------------------
+  lint-backend:
+    name: lint-backend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -40,14 +46,56 @@ jobs:
       - name: Lint
         run: npm run lint
 
+  test-backend:
+    name: test-backend
+    needs: lint-backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Unit tests
         run: npm run test
+
+  build-backend:
+    name: build-backend
+    needs: test-backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Build
         run: npm run build
 
-  frontend:
-    name: Frontend (lint, test, build)
+  lint-frontend:
+    name: lint-frontend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -69,14 +117,56 @@ jobs:
       - name: Lint
         run: npm run lint
 
+  test-frontend:
+    name: test-frontend
+    needs: lint-frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Unit tests
         run: npm run test
+
+  build-frontend:
+    name: build-frontend
+    needs: test-frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Build
         run: npm run build
 
   security:
-    name: Security (Trivy filesystem scan)
+    name: security
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -99,7 +189,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-push:
     name: Build & push Docker images
-    needs: [backend, frontend, security]
+    needs: [build-backend, build-frontend, security]
     runs-on: ubuntu-latest
     env:
       BACKEND_IMAGE: drace1337/perfume-shop-backend
